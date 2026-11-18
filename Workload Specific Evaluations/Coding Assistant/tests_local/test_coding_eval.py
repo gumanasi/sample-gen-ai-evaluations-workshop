@@ -146,7 +146,7 @@ def test_harbor_run_command(monkeypatch, tmp_path):
 
 def test_egress_check_logic(monkeypatch):
     """The egress check with a fake Docker: the allowed hosts answer, the blocked hosts do not."""
-    allowed = ("bedrock-mantle.us-east-1.api.aws",)  # Codex
+    allowed = ("bedrock-mantle.us-east-1.api.aws", "bedrock-runtime.us-east-1.amazonaws.com")  # Codex, Claude Code
     calls = []
 
     def fake(*args, timeout=None):
@@ -159,7 +159,7 @@ def test_egress_check_logic(monkeypatch):
 
     monkeypatch.setattr(ce, "_docker", fake)
     results = ce.egress_check(PR_TASKS[0])
-    assert all(results.values()) and len(results) == 5  # 1 allowed + 2 blocked hosts x 2 paths
+    assert all(results.values()) and len(results) == 6  # 2 allowed + 2 blocked hosts x 2 paths
     assert any(c[:2] == ("rm", "-f") for c in calls) and sum(c[:2] == ("network", "rm") for c in calls) == 2
 
     def leaky(*args, timeout=None):
@@ -169,3 +169,33 @@ def test_egress_check_logic(monkeypatch):
     with pytest.raises(AssertionError, match="github.com"):
         ce.egress_check(PR_TASKS[0])
 
+
+def _fake_trial(job, name, extra=""):
+    trial = job / name
+    (trial / "verifier").mkdir(parents=True)
+    (trial / "agent").mkdir()
+    (trial / "agent" / "sessions").mkdir()
+    (trial / "result.json").write_text(json.dumps({"task_name": "t", "config": {"env": {"X": "${X}"}}, "agent_result": {"cost_usd": 0.1}}))
+    (trial / "verifier" / "reward.json").write_text('{"reward": 1.0}')
+    (trial / "agent" / "trajectory.json").write_text('{"steps": []}' + extra)
+    (trial / "agent" / "sessions" / "raw.jsonl").write_text("big")
+    return trial
+
+
+def test_record_job_keeps_needed_files_only(tmp_path):
+    job = tmp_path / "job"
+    _fake_trial(job, "trial1")
+    written = ce.record_job(job, tmp_path / "out")
+    names = {p.relative_to(tmp_path / "out").as_posix() for p in written}
+    assert names == {"trial1/result.json", "trial1/verifier/reward.json", "trial1/agent/trajectory.json"}
+    result = json.loads((tmp_path / "out" / "trial1" / "result.json").read_text())
+    assert "config" not in result and result["agent_result"]["cost_usd"] == 0.1
+
+
+@pytest.mark.parametrize("leak", ["AKIAABCDEFGHIJKLMNOP", "arn:aws:iam::123456789012:role/x", "/Users/someone/repo"])
+def test_record_job_refuses_secrets(tmp_path, leak):
+    job = tmp_path / "job"
+    _fake_trial(job, "trial1", extra=leak)
+    with pytest.raises(ValueError, match="Not recorded"):
+        ce.record_job(job, tmp_path / "out")
+    assert not (tmp_path / "out").exists()

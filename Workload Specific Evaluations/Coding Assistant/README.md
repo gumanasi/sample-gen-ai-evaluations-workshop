@@ -18,7 +18,8 @@ In this workshop, the tasks run on local Docker. In practice, run them on a comp
 |----------|---------|------|
 | [01 intro and setup.ipynb](01%20intro%20and%20setup.ipynb) | The approach, the Harbor task format, how tasks run, and the setup checks | ~20 min |
 | [02 PR agent eval.ipynb](02%20PR%20agent%20eval.ipynb) | Examine a prepared reject datapoint and approve datapoint. Select the metrics. Run Codex as a PR review agent. | ~45 min |
-| [03 coding agent eval.ipynb](03%20coding%20agent%20eval.ipynb) | Examine two bug-fix datapoints. Grade the fix as Senior SWE-Bench does: hidden tests, a validation agent, a task rubric, a taste judge, and patch bloat. Run Codex as a coding agent that writes the fix. | ~60 min |
+| [03 coding agent eval.ipynb](03%20coding%20agent%20eval.ipynb) | Examine two bug-fix datapoints. Grade the fix as Senior SWE-Bench does: hidden tests, a validation agent, a task rubric, a taste judge, and patch bloat. Run Codex as a coding agent that writes the fix, and optionally Claude Code on the same tasks. | ~60 min |
+| [04 Replay recorded runs (no Docker).ipynb](04%20Replay%20recorded%20runs%20(no%20Docker).ipynb) | Grade and examine recorded Codex and Claude Code runs of notebooks 02 and 03. No Docker, no AWS, no tokens. Start here if you do not have Docker. | ~15 min |
 
 ## File Structure
 
@@ -35,6 +36,7 @@ Coding Assistant/
 ├── 01 intro and setup.ipynb
 ├── 02 PR agent eval.ipynb
 ├── 03 coding agent eval.ipynb
+├── 04 Replay recorded runs (no Docker).ipynb
 ├── datasets/
 │   ├── _shared/                 # one source for the verifier files that are the same in each task
 │   │   ├── sync.py              # copies them into each task; --check reports a copy that differs
@@ -46,6 +48,7 @@ Coding Assistant/
 │   │   ├── risk-map.toml        # path prefixes to risk levels
 │   │   ├── metric.py            # the dataset metric: the mean of each reward key
 │   │   └── tasks/               # the Harbor tasks (one reject, one approve)
+│   ├── recorded-runs/           # recorded Harbor jobs of notebooks 02 and 03, for notebook 04
 │   └── strands-evals-coding/    # the coding datapoints for notebook 03
 │       └── tasks/               # the Harbor tasks (two bug fixes, each with its own reward stack)
 ├── harvest_env/        # a Harbor Docker environment that enforces the network allowlist on Docker Desktop
@@ -63,7 +66,7 @@ Coding Assistant/
 - **Docker.** Install it first: [Docker Desktop](https://docs.docker.com/get-docker/) (macOS, Windows) or [Docker Engine](https://docs.docker.com/engine/install/) (Linux). Docker needs approximately 15 GB of free disk space for the task images. Each image has a clone of the repository, its Python dependencies, and Codex. The images of notebook 03 are approximately 4 GB each. If a build fails with `At least one invalid signature was encountered`, the Docker disk is full. Run `docker builder prune` to remove the build cache.
 - Python 3.12 or later. Harbor needs this version.
 - [Codex CLI](https://github.com/openai/codex) (`npm install -g @openai/codex`), configured for Amazon Bedrock.
-- AWS credentials with access to the Codex model and the judge models on Amazon Bedrock in `us-east-1`. The model IDs are in [model_config.py](model_config.py): `CODEX_MODEL_ID` (the agent under test), `JUDGE_MODEL_ID` (notebook 02), and `VERIFIER_MODEL_ID` (notebook 03).
+- AWS credentials with access to the Codex model and the judge models on Amazon Bedrock in `us-east-1`. The model IDs are in [model_config.py](model_config.py): `CODEX_MODEL_ID` (the agent under test), `CLAUDE_CODE_MODEL_ID` (the optional second agent), `JUDGE_MODEL_ID` (notebook 02), and `VERIFIER_MODEL_ID` (notebook 03).
 - [GitHub CLI](https://cli.github.com/), logged in with `gh auth login`.
 - git.
 

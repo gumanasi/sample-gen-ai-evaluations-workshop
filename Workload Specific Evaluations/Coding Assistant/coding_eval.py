@@ -418,3 +418,43 @@ def stop_harbor_view(proc) -> None:
         proc.kill()
     print("Harbor view stopped.")
 
+
+# ── Recorded runs (replay without Docker or AWS) ─────────────────────────────
+
+RECORDED_DIR = MODULE_DIR / "datasets" / "recorded-runs"
+
+# The files that a learner needs to grade a trial again. The raw agent sessions, junit.xml, and
+# pytest.log are left out: they are large, and trajectory.json has the same steps.
+RECORD_FILES = (
+    "agent/trajectory.json",
+    "artifacts/logs/artifacts/findings.json",
+    "verifier/reward.json", "verifier/reward_details.json", "verifier/judge.json",
+    "verifier/agent.patch", "verifier/failed_tests.txt",
+    "verifier/rubric.json", "verifier/taste.json", "verifier/validation.json", "verifier/bloat.json",
+)
+RESULT_KEYS = ("task_name", "trial_name", "agent_info", "agent_result", "exception_info", "started_at", "finished_at")
+_SECRET = re.compile(r"(AKIA|ASIA)[A-Z0-9]{16}|aws_secret_access_key|arn:aws:[a-z0-9-]+:[a-z0-9-]*:\d{12}|/Users/|/home/[a-z]")
+
+
+def record_job(job_dir: Path, dest: Path) -> list[Path]:
+    """Copy the files of each trial of a Harbor job to dest, for replay without Docker or AWS.
+
+    result.json keeps only RESULT_KEYS (not the job config). Raise ValueError, and copy nothing, if a
+    file looks like it has an AWS access key, an ARN with an account ID, or a local home path.
+    """
+    job_dir, dest = Path(job_dir), Path(dest)
+    planned: dict[Path, str] = {}
+    for result_path in sorted(job_dir.glob("*/result.json")):
+        trial = result_path.parent
+        result = read_json(result_path)
+        planned[dest / trial.name / "result.json"] = json.dumps({k: result.get(k) for k in RESULT_KEYS}, indent=1)
+        for rel in RECORD_FILES:
+            if (trial / rel).is_file():
+                planned[dest / trial.name / rel] = (trial / rel).read_text(errors="replace")
+    hits = [f"{path.relative_to(dest)}: {m.group(0)[:20]}" for path, text in planned.items() if (m := _SECRET.search(text))]
+    if hits:
+        raise ValueError("Not recorded. These files look like they have credentials or local paths:\n" + "\n".join(hits))
+    for path, text in planned.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    return sorted(planned)

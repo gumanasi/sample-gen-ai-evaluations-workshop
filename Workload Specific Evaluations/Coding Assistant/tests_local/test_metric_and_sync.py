@@ -91,3 +91,19 @@ def test_task_dirs_have_every_referenced_file():
                         "tests/judge/instruction.md", "tests/judge/reference.patch", "solution/oracle.patch"):
                 assert (task / rel).exists(), f"{task.name}: {rel} is missing"
 
+
+def test_recorded_runs_are_complete_and_clean():
+    """Each recorded trial has the files that notebook 04 reads, and nothing that looks like a secret."""
+    import coding_eval as ce
+    trials = sorted(ce.RECORDED_DIR.glob("*/*/*/result.json"))
+    assert {p.parts[-4] for p in trials} == {"codex", "claude-code"} and len(trials) == 8
+    for result in trials:
+        trial = result.parent
+        assert (trial / "verifier" / "reward.json").is_file() and (trial / "agent" / "trajectory.json").is_file()
+        if result.parts[-3] == "coding":
+            details = json.loads((trial / "verifier" / "reward_details.json").read_text())
+            assert all(isinstance(v.get("passed"), bool) for v in details["taste"]["dimensions"].values()), trial
+        assert "config" not in json.loads(result.read_text())
+    for path in ce.RECORDED_DIR.rglob("*"):
+        if path.is_file():
+            assert not ce._SECRET.search(path.read_text(errors="replace")), path
