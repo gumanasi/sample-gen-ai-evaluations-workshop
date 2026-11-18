@@ -26,14 +26,20 @@ In this workshop, the tasks run on local Docker. In practice, run them on a comp
 Coding Assistant/
 ├── README.md
 ├── requirements.txt
-├── env_setup.py
+├── env_setup.py        # PATH repair and .env loading for the Jupyter kernel
+├── coding_eval.py      # the helpers that notebooks 02 and 03 share (see below)
 ├── model_config.py     # all model IDs of the module: the agent under test and the judges
-├── codex-bedrock.toml   # Codex settings for the agent under test (Bedrock provider)
+├── codex-bedrock.toml  # Codex settings for the agent under test (Bedrock provider)
+├── .env.example        # copy to .env: AWS_REGION and AWS_PROFILE
 ├── .gitignore
 ├── 01 intro and setup.ipynb
 ├── 02 PR agent eval.ipynb
 ├── 03 coding agent eval.ipynb
 ├── datasets/
+│   ├── _shared/                 # one source for the verifier files that are the same in each task
+│   │   ├── sync.py              # copies them into each task; --check reports a copy that differs
+│   │   ├── pr-review/tests/     # score.py, judge.toml, test.sh, rubric.md, Dockerfile (notebook 02)
+│   │   └── coding/tests/        # lib/*.py, judge/models.toml (notebook 03)
 │   ├── awslabs-mcp-pr-review/   # the PR review datapoints for notebook 02
 │   │   ├── candidates/          # the PR data and the labels that each datapoint comes from
 │   │   ├── rubric.md            # how to set a severity
@@ -43,8 +49,14 @@ Coding Assistant/
 │   └── strands-evals-coding/    # the coding datapoints for notebook 03
 │       └── tasks/               # the Harbor tasks (two bug fixes, each with its own reward stack)
 ├── harvest_env/        # a Harbor Docker environment that enforces the network allowlist on Docker Desktop
+├── tests_local/        # checks of the module code that need no Docker or AWS: python -m pytest tests_local
 └── jobs/               # the notebooks make this directory: Harbor results
 ```
+
+### Shared code
+
+- **`coding_eval.py`** has the notebook helpers: the leakage scan (it plants its canary in a temporary copy of the task), the image build (it skips images that exist; `force=True` builds them again), the git seal check, an optional run-time egress check, the AWS credential refresh, the Region check, `harbor_run`, `trial_rewards`, and `harbor view`. The notebooks keep the explanations.
+- **`datasets/_shared/`** has the verifier files that are the same in every task of a dataset. Harbor builds or uploads a task only from its own directory, and a symbolic link that points outside it does not work. Thus each task keeps a full copy. Edit the file in `datasets/_shared/`, then run `python datasets/_shared/sync.py`. Notebooks 02 and 03 warn if a copy differs from its source.
 
 ## Prerequisites
 
@@ -55,6 +67,23 @@ Coding Assistant/
 - [GitHub CLI](https://cli.github.com/), logged in with `gh auth login`.
 - git.
 
+## Time, Disk, and Cost
+
+| | Approximately |
+|---|---|
+| **Disk** | 15 GB for the Docker images: four task images of 3.5 GB each, and the proxy |
+| **Time** | 1.5 to 2.5 minutes to build each image one time. Then 30 to 45 minutes for notebooks 02 and 03, with one trial for each task |
+| **Amazon Bedrock cost** | $1 to $2 for notebooks 02 and 03, with one trial for each task: about $0.25 for notebook 02 and $0.75 for notebook 03. Most of it is for the agent model. Each more trial for each task adds about the same again |
+
+We measured these values in us-east-1 in November 2026, with the model IDs in `model_config.py`. Most input tokens are cached, so a run uses millions of tokens but costs little. Prices change, and they are different in each Region: see [Amazon Bedrock pricing](https://aws.amazon.com/bedrock/pricing/).
+
+## AWS Credentials for the Agent
+
+Harbor gives your AWS credentials to Codex in the task container, and to the verifier. The network allowlist lets the container reach only Amazon Bedrock. But the agent under test can use the credentials for each Bedrock call that they allow.
+
+- Use a role that can only invoke the models in `model_config.py`: the agent model and the judge model. Do not use administrator credentials.
+- Use temporary credentials, for example from AWS IAM Identity Center, not long-term access keys.
+
 ## Getting Started
 
 1. Install Docker and start it.
@@ -63,6 +92,8 @@ Coding Assistant/
 4. Do the notebooks in sequence.
 
 ## Troubleshooting
+
+**The notebook stops with `AWS_REGION is ..., but the tasks allow only the Bedrock endpoints in us-east-1`.** Each `task.toml` allows only the Bedrock endpoints of one Region. A different Region, for example from your shell, makes every trial fail. Set `AWS_REGION=us-east-1` in `.env`. Notebooks 02 and 03 make `.env` from `.env.example` if it does not exist. To use a different Region, change `allowed_hosts` in each `task.toml` and the region in `codex-bedrock.toml`.
 
 **The setup checks say `docker`, `gh`, `codex`, or `harbor` is not on PATH, but the tool is installed.** On macOS, an editor that you open from the Dock or Finder does not read your shell profile (`~/.zshrc`). The Jupyter kernel then gets a minimal `PATH`. Each notebook runs `from env_setup import fix_path; fix_path()` at the start. This copies the `PATH` from your login shell into the kernel. If a check still fails, run that cell again, or restart the kernel and run the notebook from the top. You can also open the editor from a terminal (for example, `code .`).
 
